@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>测测你是哪种性格 · MBTI 趣味测试</title>
+<!--
+  B站 Toy 版：MBTI / 性格趣味测试
+  slug: mbti-toy
+  12 道题，每题 2 个选项，做完出 16 型结果。
+  门禁写法与 ~/workspace/toy/e-card/index.html 同一套：
+  官方 Toy SDK + 关注三连门禁 + 放行 fallback
+  （没有 window.toy / 没有 ?bv= 参数 / 接口报错或超时就直接放行）。
+  单文件页面：CSS/JS 全内联，零外部资源（除 B 站 Toy 官方 SDK）。
+  所有资源相对路径；结果页支持 #result=XXXX 分享直达。
+  娱乐测试，非心理诊断，结果仅供参考。
+-->
+<script src="https://s1.hdslb.com/bfs/seed/toy/app/sdk/toy-sdk.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f6f0ff;
+    color: #333;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; min-height: 100vh; min-height: 100dvh; }
+  #js-errors { display: none; }
+
+  /* ---------- 开始页 ---------- */
+  #startView { padding: 44px 22px; text-align: center; }
+  #startView .badge {
+    display: inline-block; padding: 5px 14px; background: #efe9ff; color: #5b21b6;
+    border-radius: 999px; font-size: 14px; font-weight: 700;
+  }
+  #startView h1 { margin-top: 18px; font-size: 32px; line-height: 1.3; }
+  #startView .sub { margin-top: 12px; font-size: 16px; color: #666; line-height: 1.8; }
+  .type-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 26px;
+  }
+  .type-grid span {
+    padding: 10px 0; background: #fff; border: 1.5px solid #e7defc; border-radius: 10px;
+    font-size: 15px; font-weight: 700; color: #5b21b6;
+  }
+  #startBtn, .big-btn {
+    width: 100%; margin-top: 30px; padding: 17px; font-size: 20px; font-weight: 800; color: #fff;
+    background: linear-gradient(135deg, #7c5cff, #ff5e7a); border: none; border-radius: 16px; cursor: pointer;
+  }
+  #startBtn:active, .big-btn:active { transform: scale(.98); }
+  .note { text-align: center; color: #888; font-size: 14px; margin-top: 16px; line-height: 1.6; }
+  .disclaimer { text-align: center; color: #aaa; font-size: 13px; margin-top: 22px; line-height: 1.6; }
+
+  /* ---------- 答题页 ---------- */
+  #quizView { padding: 30px 22px 44px; display: none; }
+  .progress { display: flex; align-items: center; gap: 10px; }
+  .progress .bar { flex: 1; height: 8px; background: #e7defc; border-radius: 999px; overflow: hidden; }
+  .progress .bar i { display: block; height: 100%; background: linear-gradient(90deg, #7c5cff, #ff5e7a); border-radius: 999px; transition: width .3s; }
+  .progress .num { font-size: 15px; font-weight: 700; color: #5b21b6; white-space: nowrap; }
+  #qText { margin-top: 26px; font-size: 23px; font-weight: 800; line-height: 1.5; }
+  .opts { margin-top: 22px; display: flex; flex-direction: column; gap: 14px; }
+  .opt {
+    width: 100%; text-align: left; padding: 18px; font-size: 18px; line-height: 1.5;
+    background: #fff; border: 2px solid #e7defc; border-radius: 16px; color: #333;
+    font-family: inherit; cursor: pointer;
+  }
+  .opt:active { border-color: #7c5cff; background: #efe9ff; transform: scale(.99); }
+  .opt .k {
+    display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center;
+    background: #efe9ff; color: #5b21b6; border-radius: 50%; font-size: 15px; font-weight: 800; margin-right: 10px;
+  }
+  .back-link { display: block; margin: 22px auto 0; background: none; border: none; color: #888; font-size: 15px; cursor: pointer; }
+
+  /* ---------- 结果页 ---------- */
+  #resultView { padding: 30px 22px 44px; display: none; text-align: center; }
+  #resultView .you-are { font-size: 15px; color: #888; }
+  #resCode {
+    margin-top: 8px; font-size: 56px; font-weight: 900; letter-spacing: 6px;
+    background: linear-gradient(135deg, #7c5cff, #ff5e7a);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  #resNick { margin-top: 4px; font-size: 22px; font-weight: 800; }
+  #resBlurb { margin-top: 12px; font-size: 16px; color: #666; line-height: 1.8; text-align: left; }
+  .chips { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .chips span { padding: 6px 14px; background: #efe9ff; color: #5b21b6; border-radius: 999px; font-size: 14px; font-weight: 700; }
+  .dims { margin-top: 22px; text-align: left; }
+  .dim { margin-bottom: 12px; }
+  .dim .lab { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; color: #666; margin-bottom: 5px; }
+  .dim .track { height: 10px; background: #eee9fa; border-radius: 999px; overflow: hidden; }
+  .dim .track i { display: block; height: 100%; background: linear-gradient(90deg, #7c5cff, #ff5e7a); border-radius: 999px; }
+  .dim .desc { font-size: 13px; color: #999; margin-top: 4px; line-height: 1.5; }
+
+  /* 完整解读（门禁锁住的部分） */
+  .detail-card {
+    margin-top: 24px; padding: 20px; background: #fff; border: 2px solid #e7defc;
+    border-radius: 16px; box-shadow: 0 1px 6px rgba(124, 92, 255, .10); text-align: left;
+  }
+  .detail-card.locked { background: #f4f2f8; }
+  .detail-card h3 { font-size: 18px; line-height: 1.4; }
+  .detail-card .lock-hint { margin-top: 8px; color: #666; font-size: 15px; line-height: 1.7; }
+  .detail-card h4 { margin-top: 16px; font-size: 16px; color: #5b21b6; }
+  .detail-card h4:first-of-type { margin-top: 14px; }
+  .detail-card p { margin-top: 6px; color: #444; font-size: 15px; line-height: 1.8; }
+  .detail-card ul { margin-top: 6px; padding-left: 20px; color: #444; font-size: 15px; line-height: 1.9; }
+  .lock-chip {
+    display: inline-block; margin-top: 6px; padding: 2px 10px;
+    background: #efe9ff; color: #5b21b6; border-radius: 999px; font-size: 12px; font-weight: 700;
+  }
+  .ghost-btn {
+    width: 100%; margin-top: 14px; padding: 15px; font-size: 17px; font-weight: 700;
+    background: #efe9ff; color: #5b21b6; border: none; border-radius: 12px; cursor: pointer;
+  }
+
+  /* 夸克报告包卡片（解锁后显示） */
+  .pack-card {
+    margin-top: 24px; padding: 18px; background: #fff; border: 2px solid #e7defc;
+    border-radius: 16px; box-shadow: 0 1px 6px rgba(124, 92, 255, .10); text-align: left;
+  }
+  .pack-card h3 { font-size: 18px; line-height: 1.4; }
+  .pack-card p { margin-top: 6px; color: #666; font-size: 15px; line-height: 1.6; }
+  .pack-card .row { display: flex; gap: 10px; margin-top: 14px; }
+  .pack-card .row .btn { flex: 1; min-height: 46px; font-size: 16px; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; }
+  .pack-card .row .btn.primary { background: linear-gradient(135deg, #7c5cff, #ff5e7a); color: #fff; }
+  .pack-card .row .btn.ghost { background: #efe9ff; color: #5b21b6; }
+  .pack-card .soon {
+    display: inline-block; margin-top: 12px; padding: 3px 12px;
+    background: #f4f2f8; color: #888; border-radius: 999px; font-size: 13px;
+  }
+  .row-btns { display: flex; gap: 10px; margin-top: 14px; }
+  .row-btns .btn { flex: 1; min-height: 50px; font-size: 16px; font-weight: 700; border: none; border-radius: 12px; cursor: pointer; }
+  .row-btns .btn.primary { background: linear-gradient(135deg, #7c5cff, #ff5e7a); color: #fff; }
+  .row-btns .btn.ghost { background: #efe9ff; color: #5b21b6; }
+
+  /* ---------- 关注三连引导弹窗 ---------- */
+  .modal-mask {
+    position: fixed; left: 0; right: 0; top: 0; bottom: 0; z-index: 50;
+    background: rgba(20, 16, 40, .55); display: flex; align-items: flex-end; justify-content: center;
+  }
+  .modal {
+    width: 100%; max-width: 560px; background: #fff; border-radius: 20px 20px 0 0;
+    padding: 22px 20px calc(20px + env(safe-area-inset-bottom));
+  }
+  .modal h2 { font-size: 19px; }
+  .modal .sub { margin-top: 6px; color: #666; font-size: 15px; }
+  .check-list { list-style: none; margin-top: 14px; }
+  .check-list li {
+    display: flex; align-items: center; gap: 10px; padding: 10px 4px;
+    border-bottom: 1px solid #f0ebfa; font-size: 16px;
+  }
+  .check-list li:last-child { border-bottom: none; }
+  .check-list .ic {
+    width: 24px; height: 24px; line-height: 24px; text-align: center; flex: none;
+    border-radius: 50%; font-size: 14px; font-weight: 700;
+  }
+  .check-list .ic.done { background: #efe9ff; color: #5b21b6; }
+  .check-list .ic.todo { background: #fdecea; color: #b3261e; }
+  .modal .err { margin-top: 12px; padding: 10px 12px; background: #fdecea; color: #8f1d16; border-radius: 10px; font-size: 14px; }
+  .modal .btn {
+    display: block; width: 100%; min-height: 52px; margin-top: 14px;
+    border: none; border-radius: 12px; background: linear-gradient(135deg, #7c5cff, #ff5e7a);
+    color: #fff; font-size: 18px; font-weight: 700; cursor: pointer;
+  }
+  .modal .btn:active { opacity: .85; }
+  .modal .btn:disabled { opacity: .55; cursor: default; }
+  .modal .btn.ghost { background: #efe9ff; color: #5b21b6; font-weight: 600; }
+  .modal .close {
+    position: absolute; top: 10px; right: 14px; width: 32px; height: 32px;
+    border: none; background: #f4f2f8; border-radius: 50%; font-size: 17px; color: #666; cursor: pointer;
+  }
+  .modal-wrap { position: relative; }
+  .spin {
+    display: inline-block; width: 16px; height: 16px; margin-right: 8px; vertical-align: -3px;
+    border: 2px solid rgba(255, 255, 255, .4); border-top-color: #fff; border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #toast {
+    position: fixed; left: 50%; bottom: 90px; z-index: 70; pointer-events: none;
+    transform: translateX(-50%) translateY(16px); opacity: 0; transition: opacity .3s, transform .3s;
+    background: rgba(0,0,0,.78); color: #fff; padding: 13px 22px; border-radius: 999px;
+    font-size: 16px; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 开始页 -->
+  <div id="startView">
+    <span class="badge">12 道题 · 约 1 分钟</span>
+    <h1>测测你是哪种性格 🧩</h1>
+    <p class="sub">凭直觉选，选更像你的那个。<br>做完看看你是 16 种性格里的哪一种。</p>
+    <div class="type-grid" id="typeGrid"></div>
+    <button id="startBtn" type="button">开始测试</button>
+    <p class="note">12 道题，凭直觉选就好。</p>
+    <p class="disclaimer">娱乐测试，仅供参考，不构成心理诊断或职业建议。<br>结果不代表你的全部，人的性格本来就很丰富。</p>
+  </div>
+
+  <!-- 答题页 -->
+  <div id="quizView">
+    <div class="progress">
+      <div class="bar"><i id="progFill" style="width: 0%"></i></div>
+      <span class="num" id="progNum">第 1 / 12 题</span>
+    </div>
+    <div id="qText"></div>
+    <div class="opts" id="opts"></div>
+    <button class="back-link" id="backBtn" type="button">← 上一题</button>
+  </div>
+
+  <!-- 结果页 -->
+  <div id="resultView">
+    <p class="you-are">你的性格类型是</p>
+    <div id="resCode">ENFP</div>
+    <div id="resNick">竞选者</div>
+    <p id="resBlurb"></p>
+    <div class="chips" id="resChips"></div>
+    <div class="dims" id="resDims"></div>
+
+    <!-- 完整解读：门禁锁住 -->
+    <div class="detail-card locked" id="detailCard">
+      <h3>📋 完整解读 <span class="lock-chip">🔒 三连解锁</span></h3>
+      <p class="lock-hint" id="detailHint">这份完整解读，讲了你的性格特点、优势、适合方向和注意事项。关注 UP 主，并给视频点赞、投币、收藏后解锁。</p>
+      <div id="detailBody" hidden></div>
+      <button class="ghost-btn" id="unlockBtn" type="button">关注三连，解锁完整解读</button>
+    </div>
+
+    <!-- 夸克报告包（解锁后显示） -->
+    <div class="pack-card" id="packCard" hidden>
+      <h3>🎁 16 型详细报告包</h3>
+      <p>16 种性格的详细报告都在夸克网盘，转存就能领，慢慢看。</p>
+      <div id="packBody"></div>
+    </div>
+
+    <div class="row-btns">
+      <button class="btn ghost" id="copyBtn" type="button">复制结果链接</button>
+      <button class="btn primary" id="againBtn" type="button">再测一次</button>
+    </div>
+    <p class="disclaimer">娱乐测试，仅供参考，不构成心理诊断或职业建议。</p>
+  </div>
+
+</div>
+
+<!-- 关注三连引导弹窗 -->
+<div class="modal-mask" id="gate-modal" hidden>
+  <div class="modal modal-wrap">
+    <button class="close" id="gate-close" type="button" aria-label="关闭">×</button>
+    <h2>先完成关注三连</h2>
+    <p class="sub">解锁完整解读前，请先关注 UP 主，并给视频点赞、投币、收藏，完成后来解锁。</p>
+    <ul class="check-list" id="gate-list"></ul>
+    <div class="err" id="gate-err" hidden></div>
+    <button class="btn" id="gate-goto" type="button">去视频页三连</button>
+    <button class="btn ghost" id="gate-recheck" type="button">我已完成，重新检查</button>
+    <button class="btn ghost" id="gate-direct" type="button" hidden>网络异常？直接解锁</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="js-errors"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* QA 钩子：收集 JS 报错，供无头质检读取（生产环境无影响） */
+  window.addEventListener('error', function (e) {
+    var el = document.getElementById('js-errors');
+    if (el) el.textContent += (e.message || 'error') + ' | ';
+  });
+
+  /* ============================================================
+     TODO: 夸克网盘 16 型报告包链接
+     报告包还没上传到夸克，等上传后把真实分享链接填到这里。
+     为空时卡片显示“还在整理，敬请期待”，不会出现死链接。
+     ============================================================ */
+  var QUARK_PACK_URL = '';
+
+  /* 当前视频 BV 号（Toy 挂在视频下时从 ?bv= 读到） */
+  var BV = '';
+  try { BV = new URLSearchParams(window.location.search).get('bv') || ''; } catch (e) { BV = ''; }
+
+  /* ---------------- 题目：12 道，每维度 3 道，每题 2 个选项 ---------------- */
+  var QUESTIONS = [
+    { text: '周末休息，你更想怎么过？', a: { t: '和朋友出去玩、聚会', v: 'E' }, b: { t: '一个人在家看看书、追追剧', v: 'I' } },
+    { text: '认识新朋友时，你通常是？', a: { t: '主动打招呼，很快就聊起来', v: 'E' }, b: { t: '等别人先开口，慢慢熟悉', v: 'I' } },
+    { text: '忙了一天很累了，你怎么充电？', a: { t: '找人聊聊天、出去走走', v: 'E' }, b: { t: '一个人安静待一会儿', v: 'I' } },
+    { text: '你平时更关注？', a: { t: '眼前具体的事、细节和实际做法', v: 'S' }, b: { t: '未来的可能性和新想法', v: 'N' } },
+    { text: '学新东西时，你更喜欢？', a: { t: '一步步来，先掌握具体步骤', v: 'S' }, b: { t: '先理解整体思路，再补细节', v: 'N' } },
+    { text: '和朋友聊天，你更容易聊起？', a: { t: '身边发生的事、好吃的好玩的', v: 'S' }, b: { t: '各种想法、假设和“如果……会怎样”', v: 'N' } },
+    { text: '朋友找你倾诉烦恼，你会先？', a: { t: '帮 TA 分析问题、想解决办法', v: 'T' }, b: { t: '先安慰 TA 的情绪', v: 'F' } },
+    { text: '做决定时，你更看重？', a: { t: '逻辑和道理，是不是合理', v: 'T' }, b: { t: '人的感受，会不会伤害到谁', v: 'F' } },
+    { text: '别人评价你，你更在意被说？', a: { t: '“想得不周全”', v: 'T' }, b: { t: '“不够体贴”', v: 'F' } },
+    { text: '出门旅行，你更习惯？', a: { t: '提前做好行程计划', v: 'J' }, b: { t: '大概定个方向，走到哪玩到哪', v: 'P' } },
+    { text: '你的桌面或房间通常是？', a: { t: '东西各归其位，比较整齐', v: 'J' }, b: { t: '乱中有序，反正自己找得到', v: 'P' } },
+    { text: '截止日期快到了，你通常？', a: { t: '早就做完了', v: 'J' }, b: { t: '临近截止才集中赶完', v: 'P' } }
+  ];
+
+  /* ---------------- 16 型数据（娱乐参考） ---------------- */
+  var TYPES = {
+    INTJ: { nick: '建筑师', blurb: '目标明确、独立思考，喜欢把事情想透了再动手。你脑子里常有一张长远的地图，走路都带着方向感。',
+      chips: ['目标感强', '独立思考', '长远规划'],
+      d: { t: '你习惯先想清楚再行动，做事有自己的节奏，不太会被外界带跑。', s: '逻辑严密、执行力强，善于抓住事情的本质。', f: '需要深度思考和规划的事，比如产品策划、研究分析、做自己的小项目。', n: '别总一个人扛，适当听听身边人的想法；也别把弦绷太紧，记得休息。' } },
+    INTP: { nick: '逻辑学家', blurb: '好奇心强，爱琢磨“为什么”。感兴趣的事能钻研很久，想法常常出人意料。',
+      chips: ['好奇心强', '思维灵活', '爱钻研'],
+      d: { t: '你喜欢弄明白事情背后的道理，想法多，不太人云亦云。', s: '学习能力强，思维灵活，能从不同角度看问题。', f: '研究、技术、内容创作这类需要琢磨的事。', n: '想法很多，落地可以慢一点，先从一小步做起；别忘了按时吃饭睡觉。' } },
+    ENTJ: { nick: '指挥官', blurb: '目标感强，喜欢把一群人组织起来，把事情做成。你天生适合带队往前冲。',
+      chips: ['目标感强', '决断快', '统筹力强'],
+      d: { t: '你做事讲求效率和结果，遇到问题习惯直接拍板、推进。', s: '决断快、统筹能力强，抗压能力不错。', f: '管理、带项目、创业这类需要组织和推进的事。', n: '效率重要，但身边人的感受也值得多留意，慢一步有时走得更远。' } },
+    ENTP: { nick: '辩论家', blurb: '脑子转得快，点子一个接一个，喜欢新想法和有意思的讨论。',
+      chips: ['点子王', '反应快', '适应力强'],
+      d: { t: '你对新鲜事物充满兴趣，聊起感兴趣的话题能滔滔不绝。', s: '反应快、口才好，适应新环境的能力强。', f: '创意、营销、需要谈判和表达的场合。', n: '点子多是优势，选一两个认真做完，效果会更明显。' } },
+    INFJ: { nick: '提倡者', blurb: '内心有明确的价值追求，共情力强。你温柔，但认定的事会坚持很久。',
+      chips: ['共情力强', '有原则', '洞察人心'],
+      d: { t: '你很在意事情有没有意义，也很能理解别人的感受。', s: '洞察力强、有耐心，做事有自己的原则。', f: '教育、写作、内容创作、和人打交道的方向。', n: '别总把别人的情绪背在自己身上，累了就歇一歇，你也需要被照顾。' } },
+    INFP: { nick: '调停者', blurb: '重视内心的感受，喜欢真诚和有意义的事。你心里装着一个浪漫的世界。',
+      chips: ['真诚', '共情强', '有创造力'],
+      d: { t: '你做选择常跟着内心的感受走，喜欢真实、不做作的东西。', s: '共情强、有创造力，对人真诚。', f: '写作、艺术、内容创作、助人方向的事。', n: '理想很美，落地可以一步步来；别因为一次否定就怀疑自己。' } },
+    ENFJ: { nick: '主人公', blurb: '善于理解和鼓励别人，喜欢帮身边人成长。你在的地方，氛围常常更好。',
+      chips: ['沟通力强', '有感染力', '责任心强'],
+      d: { t: '你很会站在别人的角度想问题，也乐意把大家组织起来。', s: '沟通能力强、有感染力，做事认真负责。', f: '教学、带团队、社群运营、内容分享。', n: '照顾别人之前，先照顾好自己的电量，别透支自己。' } },
+    ENFP: { nick: '竞选者', blurb: '热情又好奇，喜欢新鲜事物和认识新朋友。你走到哪，热闹就跟到哪。',
+      chips: ['热情', '好奇心强', '有创意'],
+      d: { t: '你对世界充满好奇，想到什么就想试试，行动力常在线。', s: '热情、有创意，适应新环境很快。', f: '新媒体、活动策划、旅行相关、想尝试的新方向。', n: '兴趣多是好事，重要的事可以先排个优先级，一件件来。' } },
+    ISTJ: { nick: '物流师', blurb: '踏实、守信，做事有条理。交代给你的事，基本不用操心。',
+      chips: ['踏实靠谱', '执行力强', '细心'],
+      d: { t: '你做事讲究章法和承诺，说到就会做到。', s: '执行力强、细心，是身边人眼里值得信赖的人。', f: '需要耐心和规范的事，比如财务、运营、工程类工作。', n: '计划之外的小变化也可以试着接受，不必事事求稳。' } },
+    ISFJ: { nick: '守卫者', blurb: '细心体贴，默默把事情做到位。你是那种“有你在就安心”的人。',
+      chips: ['细心体贴', '耐心', '责任心强'],
+      d: { t: '你总能注意到别人忽略的细节，把身边照顾得妥妥当当。', s: '耐心、细心、责任心强，做事让人放心。', f: '教育、客服、后勤保障这类需要耐心和细致的事。', n: '你的付出值得被看见，别总把自己的需求藏在心里。' } },
+    ESTJ: { nick: '总经理', blurb: '做事有章法，目标清晰，讲求效率。你是团队里那个让人安心的主心骨。',
+      chips: ['高效', '组织力强', '说到做到'],
+      d: { t: '你喜欢把事情安排得明明白白，按计划一步步推进。', s: '组织力强、执行快，说到做到。', f: '管理、运营、创业这类需要统筹的事。', n: '规则之外，也可以多听听不同的做法，有时会打开新思路。' } },
+    ESFJ: { nick: '执政官', blurb: '重视身边人的关系，喜欢把大家聚在一起。你是天生的氛围组织者。',
+      chips: ['热情细心', '善于协调', '重情义'],
+      d: { t: '你很在意身边人的感受，喜欢热热闹闹、互相照应。', s: '细心、热情，善于协调不同人的想法。', f: '社群运营、教育、服务行业、活动组织。', n: '别人的评价不用太往心里去，你已经做得很好了。' } },
+    ISTP: { nick: '鉴赏家', blurb: '喜欢动手琢磨，遇到问题先试试再说。你是安静但靠谱的问题解决者。',
+      chips: ['动手能力强', '冷静', '反应快'],
+      d: { t: '你更相信亲手试出来的经验，遇到问题习惯自己先拆解看看。', s: '动手能力强、冷静，关键时刻反应快。', f: '技术、运动、手工创作这类能动手的事。', n: '多和身边人分享你的想法，合作起来会更顺。' } },
+    ISFP: { nick: '探险家', blurb: '随性、感性，喜欢美和舒服的生活节奏。你活得很真实，也很自由。',
+      chips: ['审美在线', '真诚', '随性自由'],
+      d: { t: '你跟着自己的感觉走，喜欢美的东西，也享受当下的节奏。', s: '审美不错、真诚，适应力强。', f: '设计、摄影、手工、自由职业这类能发挥审美的事。', n: '喜欢的事值得认真投入，拖延时可以先做一小步。' } },
+    ESTP: { nick: '企业家', blurb: '行动力强，喜欢边做边调整，享受当下的刺激。你是天生的行动派。',
+      chips: ['行动力强', '反应快', '社交能力强'],
+      d: { t: '你不喜欢空想，想到就去做，遇到问题再灵活调整。', s: '反应快、胆大心细，和人打交道很有一套。', f: '销售、创业、活动执行、运动相关的事。', n: '冲之前先看一眼风险，留一点后路，会走得更稳。' } },
+    ESFP: { nick: '表演者', blurb: '热情开朗，喜欢和人待在一起，享受舞台感。你是人群里的快乐源泉。',
+      chips: ['热情开朗', '感染力强', '乐观'],
+      d: { t: '你喜欢热闹和分享，走到哪都能和人打成一片。', s: '感染力强、乐观，适应新环境很快。', f: '直播、新媒体、活动主持、表演相关的事。', n: '开心很重要，重要的事也可以提前留点时间准备。' } }
+  };
+  var TYPE_CODES = Object.keys(TYPES);
+  var DIM_LABELS = [
+    { a: 'E', b: 'I', an: '外倾', bn: '内倾', desc: '能量来自哪里：和人相处充电，还是独处充电' },
+    { a: 'S', b: 'N', an: '实感', bn: '直觉', desc: '关注什么：眼前的具体细节，还是未来的可能性' },
+    { a: 'T', b: 'F', an: '思考', bn: '情感', desc: '怎么做决定：更看重逻辑道理，还是人的感受' },
+    { a: 'J', b: 'P', an: '判断', bn: '知觉', desc: '怎么安排生活：喜欢计划好，还是随性灵活' }
+  ];
+
+  var startView = document.getElementById('startView');
+  var quizView = document.getElementById('quizView');
+  var resultView = document.getElementById('resultView');
+  var toast = document.getElementById('toast');
+  var answers = [];
+  var currentQ = 0;
+
+  function showToast(text) {
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(function () { toast.classList.remove('show'); }, 2200);
+  }
+
+  /* 开始页 16 型一览 */
+  (function () {
+    var grid = document.getElementById('typeGrid');
+    TYPE_CODES.forEach(function (code) {
+      var s = document.createElement('span');
+      s.textContent = code;
+      grid.appendChild(s);
+    });
+  })();
+
+  function showStart() {
+    resultView.style.display = 'none';
+    quizView.style.display = 'none';
+    startView.style.display = 'block';
+    document.title = '测测你是哪种性格 · MBTI 趣味测试';
+  }
+
+  function showQuiz() {
+    startView.style.display = 'none';
+    resultView.style.display = 'none';
+    quizView.style.display = 'block';
+    renderQ();
+  }
+
+  function renderQ() {
+    var q = QUESTIONS[currentQ];
+    document.getElementById('progFill').style.width = ((currentQ) / QUESTIONS.length * 100) + '%';
+    document.getElementById('progNum').textContent = '第 ' + (currentQ + 1) + ' / ' + QUESTIONS.length + ' 题';
+    document.getElementById('qText').textContent = q.text;
+    var opts = document.getElementById('opts');
+    opts.innerHTML = '';
+    [['a', 'A'], ['b', 'B']].forEach(function (pair) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'opt';
+      btn.innerHTML = '<span class="k">' + pair[1] + '</span>' + q[pair[0]].t;
+      btn.addEventListener('click', function () {
+        answers[currentQ] = q[pair[0]].v;
+        if (currentQ < QUESTIONS.length - 1) {
+          currentQ++;
+          renderQ();
+        } else {
+          document.getElementById('progFill').style.width = '100%';
+          showResult(computeType());
+        }
+      });
+      opts.appendChild(btn);
+    });
+    document.getElementById('backBtn').style.visibility = currentQ === 0 ? 'hidden' : 'visible';
+  }
+
+  function computeType() {
+    var dims = [['E', 'I'], ['S', 'N'], ['T', 'F'], ['J', 'P']];
+    var code = '';
+    dims.forEach(function (pair, di) {
+      var countA = 0;
+      for (var i = di * 3; i < di * 3 + 3; i++) {
+        if (answers[i] === pair[0]) countA++;
+      }
+      code += countA >= 2 ? pair[0] : pair[1];
+    });
+    return code;
+  }
+
+  function showResult(code) {
+    var t = TYPES[code] || TYPES.ENFP;
+    document.getElementById('resCode').textContent = code;
+    document.getElementById('resNick').textContent = t.nick;
+    document.getElementById('resBlurb').textContent = t.blurb;
+    var chips = document.getElementById('resChips');
+    chips.innerHTML = '';
+    t.chips.forEach(function (c) {
+      var s = document.createElement('span');
+      s.textContent = c;
+      chips.appendChild(s);
+    });
+    /* 四个维度条 */
+    var dimsEl = document.getElementById('resDims');
+    dimsEl.innerHTML = '';
+    var dims = [['E', 'I'], ['S', 'N'], ['T', 'F'], ['J', 'P']];
+    dims.forEach(function (pair, di) {
+      var countA = 0;
+      for (var i = di * 3; i < di * 3 + 3; i++) {
+        if (answers[i] === pair[0]) countA++;
+      }
+      var lab = DIM_LABELS[di];
+      var win = countA >= 2 ? pair[0] : pair[1];
+      var winName = win === pair[0] ? lab.an : lab.bn;
+      var row = document.createElement('div');
+      row.className = 'dim';
+      row.innerHTML = '<div class="lab"><span>' + lab.an + ' ' + pair[0] + ' · ' + lab.bn + ' ' + pair[1] + '</span><span>偏向 ' + winName + '（' + Math.max(countA, 3 - countA) + ' / 3）</span></div>' +
+        '<div class="track"><i style="width:' + (Math.max(countA, 3 - countA) / 3 * 100) + '%"></i></div>' +
+        '<div class="desc">' + lab.desc + '</div>';
+      dimsEl.appendChild(row);
+    });
+    /* 完整解读（锁住状态重置） */
+    resetDetail(code);
+    startView.style.display = 'none';
+    quizView.style.display = 'none';
+    resultView.style.display = 'block';
+    document.title = '我是 ' + code + ' · ' + t.nick + ' ｜ MBTI 趣味测试';
+    try {
+      history.replaceState(null, '', location.pathname + location.search + '#result=' + code);
+    } catch (e) { /* 忽略 */ }
+  }
+
+  function resetDetail(code) {
+    var t = TYPES[code];
+    var card = document.getElementById('detailCard');
+    var body = document.getElementById('detailBody');
+    var hint = document.getElementById('detailHint');
+    var btn = document.getElementById('unlockBtn');
+    if (unlocked) {
+      renderDetail(code);
+      return;
+    }
+    card.classList.add('locked');
+    body.hidden = true;
+    body.innerHTML = '';
+    hint.textContent = '这份完整解读，讲了' + code + '（' + t.nick + '）的性格特点、优势、适合方向和注意事项。关注 UP 主，并给视频点赞、投币、收藏后解锁。';
+    btn.style.display = 'block';
+  }
+
+  function renderDetail(code) {
+    var t = TYPES[code];
+    var card = document.getElementById('detailCard');
+    var body = document.getElementById('detailBody');
+    var hint = document.getElementById('detailHint');
+    var btn = document.getElementById('unlockBtn');
+    card.classList.remove('locked');
+    hint.textContent = '已解锁 · ' + code + '（' + t.nick + '）完整解读';
+    body.innerHTML =
+      '<h4>性格特点</h4><p>' + t.d.t + '</p>' +
+      '<h4>优势</h4><p>' + t.d.s + '</p>' +
+      '<h4>适合方向</h4><p>' + t.d.f + '</p>' +
+      '<h4>注意事项</h4><p>' + t.d.n + '</p>';
+    body.hidden = false;
+    btn.style.display = 'none';
+    renderPackCard();
+    var pack = document.getElementById('packCard');
+    if (pack) pack.hidden = false;
+  }
+
+  document.getElementById('startBtn').addEventListener('click', function () {
+    answers = [];
+    currentQ = 0;
+    showQuiz();
+  });
+  document.getElementById('backBtn').addEventListener('click', function () {
+    if (currentQ > 0) { currentQ--; renderQ(); }
+  });
+  document.getElementById('againBtn').addEventListener('click', function () {
+    answers = [];
+    currentQ = 0;
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* 忽略 */ }
+    showQuiz();
+  });
+  document.getElementById('copyBtn').addEventListener('click', function () {
+    var url = location.href;
+    function done() { showToast('结果链接已复制，快发给朋友测测 🎉'); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); }
+      catch (err) { showToast('复制失败，请长按地址栏手动复制'); }
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, fallback);
+    } else {
+      fallback();
+    }
+  });
+
+  /* #result=XXXX 直达结果页（分享链接用；无答题记录时维度条按该类型显示） */
+  function route() {
+    var m = (location.hash || '').match(/#result=([A-Za-z]{4})/);
+    if (m) {
+      var code = m[1].toUpperCase();
+      if (TYPES[code]) {
+        /* 按该类型补一份默认答案，保证维度条一致 */
+        answers = code.split('');
+        var map = { E: 'E', I: 'I', S: 'S', N: 'N', T: 'T', F: 'F', J: 'J', P: 'P' };
+        answers = [];
+        [['E', 'I'], ['S', 'N'], ['T', 'F'], ['J', 'P']].forEach(function (pair, di) {
+          var win = code[di];
+          for (var k = 0; k < 3; k++) answers.push(win);
+        });
+        showResult(code);
+        return;
+      }
+    }
+    showStart();
+  }
+
+  /* QA 钩子：?qa=auto 自动答完全部 12 题，供无头质检跑全流程 */
+  function qaAuto() {
+    try {
+      if (new URLSearchParams(window.location.search).get('qa') !== 'auto') return;
+    } catch (e) { return; }
+    showQuiz();
+    var step = 0;
+    var timer = setInterval(function () {
+      var btns = document.querySelectorAll('#quizView .opt');
+      if (btns.length && step < QUESTIONS.length) {
+        btns[step % 2].click();
+        step++;
+      } else {
+        clearInterval(timer);
+      }
+    }, 200);
+  }
+
+  /* ============================================================
+     Toy 门禁：关注三连解锁完整解读
+     与 ~/workspace/toy/e-card/index.html 同一套写法。
+     放行规则：没有 window.toy / 没有 ?bv= / 接口报错或超时 → 直接放行，绝不卡住用户。
+     ============================================================ */
+  var unlocked = false;    /* 本次打开已解锁后，不再重复查 */
+  var currentCode = null;  /* 当前结果类型 */
+
+  function isPlaceholder(link) {
+    return !link || link.indexOf('QUARK_PACK_URL') === 0;
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return legacyCopy(text); });
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+  function legacyCopy(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) { return false; }
+  }
+  function openLink(url) {
+    try {
+      var a = document.createElement('a');
+      a.href = url; a.target = '_blank'; a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      try { window.open(url, '_blank'); } catch (e2) { /* 忽略 */ }
+    }
+  }
+
+  /* SDK 返回结构未在公开文档里写死，做宽容解析：
+     关注：followed / is_follow / isFollow / is_followed / attribute(2或6已关注) / relation；
+     三连：like / coin / fav（及其 liked/coined/favorite/collected/has_* 变体，布尔或 1/0）。
+     解析不到、或接口不支持/报错/超时 → 直接放行，不卡用户。 */
+  function pickBool(obj, keys) {
+    if (!obj || typeof obj !== 'object') return null;
+    for (var i = 0; i < keys.length; i++) {
+      var v = obj[keys[i]];
+      if (v === true || v === 1 || v === '1') return true;
+      if (v === false || v === 0 || v === '0') return false;
+    }
+    return null;
+  }
+  function unwrap(d) {
+    if (d && typeof d === 'object' && d.data && typeof d.data === 'object') return d.data;
+    return d;
+  }
+  function parseFollow(d) {
+    d = unwrap(d);
+    if (!d || typeof d !== 'object') return null;
+    if (d.status === 'unsupported' || d.status === 'unavailable') return null;
+    var b = pickBool(d, ['followed', 'is_follow', 'isFollow', 'is_followed', 'isFollowed']);
+    if (b !== null) return b;
+    if (typeof d.attribute === 'number') return d.attribute === 2 || d.attribute === 6;
+    if (typeof d.relation === 'number') return d.relation === 2 || d.relation === 6;
+    if (typeof d.status === 'string') {
+      if (d.status === 'followed' || d.status === 'following') return true;
+      if (d.status === 'unfollowed' || d.status === 'not_followed') return false;
+    }
+    return null;
+  }
+  function parseActions(d) {
+    d = unwrap(d);
+    if (!d || typeof d !== 'object') return { like: null, coin: null, fav: null };
+    if (d.status === 'unsupported' || d.status === 'unavailable') return { like: null, coin: null, fav: null };
+    var item = null;
+    if (Array.isArray(d.items)) {
+      item = d.items.filter(function (x) { return x && (x.bvid === BV || x.bv === BV); })[0]
+        || (d.items.length === 1 ? d.items[0] : null);
+    } else if (Array.isArray(d.list)) {
+      item = d.list.filter(function (x) { return x && (x.bvid === BV || x.bv === BV); })[0]
+        || (d.list.length === 1 ? d.list[0] : null);
+    } else if (Array.isArray(d.videos)) {
+      item = d.videos.filter(function (x) { return x && (x.bvid === BV || x.bv === BV); })[0]
+        || (d.videos.length === 1 ? d.videos[0] : null);
+    } else if (BV && d[BV] && typeof d[BV] === 'object') {
+      item = d[BV];
+    } else if ('like' in d || 'coin' in d || 'fav' in d || 'favorite' in d) {
+      item = d;
+    }
+    if (!item) return { like: null, coin: null, fav: null };
+    return {
+      like: pickBool(item, ['like', 'liked', 'has_like', 'is_like', 'thumb']),
+      coin: pickBool(item, ['coin', 'coined', 'has_coin', 'is_coin']),
+      fav: pickBool(item, ['fav', 'favorite', 'favourite', 'collected', 'has_fav', 'is_fav', 'favourited'])
+    };
+  }
+
+  function withTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise(function (_, reject) { setTimeout(function () { reject(new Error('timeout')); }, ms); })
+    ]);
+  }
+
+  /* 返回 { ok: true } = 放行；{ ok: false, missing: [...] } = 需要引导三连 */
+  function checkGate() {
+    if (!window.toy || !BV) return Promise.resolve({ ok: true, reason: 'no-sdk-or-bv' });
+    var relP = Promise.resolve().then(function () { return window.toy.getAuthorRelation(); });
+    var actP = Promise.resolve().then(function () { return window.toy.getVideoUserActions({ videos: [BV] }); });
+    return withTimeout(Promise.all([relP, actP]), 6000).then(function (res) {
+      var follow = parseFollow(res[0]);
+      var acts = parseActions(res[1]);
+      var missing = [];
+      if (follow === false) missing.push('follow');
+      if (acts.like === false) missing.push('like');
+      if (acts.coin === false) missing.push('coin');
+      if (acts.fav === false) missing.push('fav');
+      if (missing.length === 0) return { ok: true, reason: 'passed' };
+      return { ok: false, missing: missing, detail: { follow: follow, like: acts.like, coin: acts.coin, fav: acts.fav } };
+    }, function () {
+      /* 超时或接口报错 → 直接放行 */
+      return { ok: true, reason: 'error-or-timeout' };
+    });
+  }
+
+  function setBtnLoading(btn, loading, label) {
+    if (loading) {
+      btn.disabled = true;
+      btn.dataset.label = btn.textContent;
+      btn.innerHTML = '<span class="spin"></span>检查中…';
+    } else {
+      btn.disabled = false;
+      btn.textContent = btn.dataset.label || label || btn.textContent;
+    }
+  }
+
+  /* ---------------- 解锁完整解读 ---------------- */
+  function unlockAll() {
+    unlocked = true;
+    var code = (document.getElementById('resCode').textContent || 'ENFP').trim();
+    renderDetail(code);
+  }
+
+  /* 点“解锁完整解读” → 先查三连，通过就解锁，不通过就弹引导窗 */
+  function tryUnlock() {
+    if (unlocked) { return; }
+    checkGate().then(function (res) {
+      if (res.ok) {
+        unlockAll();
+        showToast('已解锁完整解读 🎉');
+      } else {
+        openGateModal(res.missing, res.detail);
+      }
+    });
+  }
+
+  document.getElementById('unlockBtn').addEventListener('click', tryUnlock);
+
+  /* ---------------- 夸克报告包卡片 ---------------- */
+  function renderPackCard() {
+    var body = document.getElementById('packBody');
+    if (!body) return;
+    body.innerHTML = '';
+    if (isPlaceholder(QUARK_PACK_URL)) {
+      var soon = document.createElement('span');
+      soon.className = 'soon';
+      soon.textContent = '报告包还在整理，解锁后尽快上架，敬请期待';
+      body.appendChild(soon);
+      return;
+    }
+    var row = document.createElement('div');
+    row.className = 'row';
+    var b1 = document.createElement('button');
+    b1.type = 'button'; b1.className = 'btn ghost'; b1.textContent = '复制链接';
+    b1.addEventListener('click', function () {
+      copyText(QUARK_PACK_URL).then(function (ok) {
+        showToast(ok ? '链接已复制，去夸克打开即可保存' : '复制失败，请点“直接打开”');
+      });
+    });
+    var b2 = document.createElement('button');
+    b2.type = 'button'; b2.className = 'btn primary'; b2.textContent = '直接打开';
+    b2.addEventListener('click', function () { openLink(QUARK_PACK_URL); });
+    row.appendChild(b1); row.appendChild(b2);
+    body.appendChild(row);
+  }
+
+  /* ---------------- 三连引导弹窗 ---------------- */
+  var GATE_ITEMS = [
+    { key: 'follow', label: '关注 UP 主' },
+    { key: 'like', label: '给视频点赞' },
+    { key: 'coin', label: '给视频投币' },
+    { key: 'fav', label: '收藏视频' }
+  ];
+  function $(id) { return document.getElementById(id); }
+  function openGateModal(missing, detail) {
+    var list = $('gate-list');
+    list.innerHTML = '';
+    GATE_ITEMS.forEach(function (it) {
+      var li = document.createElement('li');
+      var done = detail && detail[it.key] === true;
+      var ic = document.createElement('span');
+      ic.className = 'ic ' + (done ? 'done' : 'todo');
+      ic.textContent = done ? '✓' : '○';
+      var tx = document.createElement('span');
+      tx.textContent = it.label + (done ? '（已完成）' : '（未完成）');
+      li.appendChild(ic); li.appendChild(tx);
+      list.appendChild(li);
+    });
+    $('gate-err').hidden = true;
+    $('gate-direct').hidden = true;
+    $('gate-goto').hidden = !BV;
+    $('gate-recheck').textContent = '我已完成，重新检查';
+    $('gate-modal').hidden = false;
+  }
+  function closeGateModal() { $('gate-modal').hidden = true; }
+
+  $('gate-close').addEventListener('click', closeGateModal);
+  $('gate-modal').addEventListener('click', function (e) { if (e.target === $('gate-modal')) closeGateModal(); });
+  $('gate-goto').addEventListener('click', function () {
+    if (window.toy && window.toy.navigate && BV) {
+      try {
+        var r = window.toy.navigate({ type: 'video', id: BV });
+        if (r && r.catch) r.catch(function () { openLink('https://www.bilibili.com/video/' + BV); });
+        return;
+      } catch (e) { /* 往下走 fallback */ }
+    }
+    if (BV) openLink('https://www.bilibili.com/video/' + BV);
+  });
+  $('gate-recheck').addEventListener('click', function () {
+    var btn = $('gate-recheck');
+    setBtnLoading(btn, true);
+    checkGate().then(function (res) {
+      setBtnLoading(btn, false, '我已完成，重新检查');
+      if (res.ok) {
+        unlockAll();
+        closeGateModal();
+        showToast('已解锁完整解读 🎉');
+        return;
+      }
+      /* 仍未完成：刷新清单 */
+      openGateModal(res.missing, res.detail);
+    }, function () {
+      /* 请求失败（可重试）：显示错误 + 直接解锁 fallback */
+      setBtnLoading(btn, false, '我已完成，重新检查');
+      var err = $('gate-err');
+      err.textContent = '检查失败，可能是网络问题，点“重新检查”再试一次，或直接解锁。';
+      err.hidden = false;
+      $('gate-direct').hidden = false;
+    });
+  });
+  $('gate-direct').addEventListener('click', function () {
+    closeGateModal();
+    unlockAll();
+    showToast('已解锁完整解读 🎉');
+  });
+
+  route();
+  qaAuto();
+})();
+</script>
+</body>
+</html>
